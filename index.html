@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GameZone - Portal Mini Game Arcade</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #8b5cf6;
+      --text: #f8fafc;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text);
+    }
+    header {
+      padding: 1.5rem;
+      background: #020617;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--accent);
+    }
+    .search-bar input {
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      border: 1px solid var(--accent);
+      background: #0f172a;
+      color: #fff;
+    }
+    .stats {
+      display: flex;
+      gap: 15px;
+      font-weight: bold;
+    }
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 20px;
+      padding: 2rem;
+    }
+    .game-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      border: 1px solid #334155;
+    }
+    .game-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 20px rgba(139, 92, 246, 0.3);
+      border-color: var(--accent);
+    }
+    .game-icon {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+    }
+    .card-badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 3px 8px;
+      background: rgba(250, 204, 21, 0.15);
+      border: 1px solid #facc15;
+      color: #facc15;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    #game-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+    #game-frame {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      border: 2px solid var(--accent);
+    }
+    .difficulty-selector {
+      margin-bottom: 10px;
+    }
+    .difficulty-selector label {
+      font-size: 0.9rem;
+      font-weight: bold;
+      margin-right: 5px;
+      color: #94a3b8;
+    }
+    .difficulty-selector select {
+      padding: 5px 10px;
+      border-radius: 5px;
+      background: #0f172a;
+      color: #fff;
+      border: 1px solid var(--accent);
+      cursor: pointer;
+    }
+    .close-btn {
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🎮 NopalZone</h1>
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Cari game..." onkeyup="filterGames()">
+    </div>
+    <div class="stats">
+      <span>⭐ Level: <span id="userLevel">1</span></span>
+      <span>🔥 XP: <span id="userXP">0</span></span>
+    </div>
+  </header>
+
+  <main class="grid-container" id="gameGrid"></main>
+
+  <div id="game-modal">
+    <div id="game-frame">
+      <h2 id="modalTitle">Game Title</h2>
+      
+      <div class="difficulty-selector">
+        <label for="difficultySelect">Tingkat Kesulitan:</label>
+        <select id="difficultySelect" onchange="changeDifficulty()">
+          <option value="easy">Easy (1x XP)</option>
+          <option value="medium" selected>Medium (1.5x XP)</option>
+          <option value="hard">Hard (2x XP)</option>
+        </select>
+      </div>
+
+      <canvas id="gameCanvas" width="400" height="400"></canvas>
+      <br>
+      <button class="close-btn" onclick="closeGame()">Tutup Game</button>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. CLASS SNAKE GAME
+    // ==========================================
+    class SnakeGame {
+      constructor(canvasId, onScoreUpdate, difficulty = 'medium') {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.onScoreUpdate = onScoreUpdate;
+        this.speed = difficulty === 'easy' ? 130 : difficulty === 'medium' ? 80 : 45;
+        this.gridSize = 20;
+        this.tileCount = this.canvas.width / this.gridSize;
+        this.reset();
+        this.bindEvents();
+      }
+      reset() {
+        this.snake = [{ x: 10, y: 10 }];
+        this.food = { x: 15, y: 15 };
+        this.dx = 1; this.dy = 0;
+        this.score = 0; this.gameOver = false;
+        if (this.loop) clearInterval(this.loop);
+      }
+      start() {
+        this.reset();
+        this.loop = setInterval(() => this.update(), this.speed);
+      }
+      bindEvents() {
+        window.onkeydown = (e) => {
+          if (e.key === 'ArrowUp' && this.dy === 0) { this.dx = 0; this.dy = -1; }
+          if (e.key === 'ArrowDown' && this.dy === 0) { this.dx = 0; this.dy = 1; }
+          if (e.key === 'ArrowLeft' && this.dx === 0) { this.dx = -1; this.dy = 0; }
+          if (e.key === 'ArrowRight' && this.dx === 0) { this.dx = 1; this.dy = 0; }
+        };
+      }
+      update() {
+        if (this.gameOver) return;
+        const head = { x: this.snake[0].x + this.dx, y: this.snake[0].y + this.dy };
+        if (head.x < 0 || head.x >= this.tileCount || head.y < 0 || head.y >= this.tileCount) return this.endGame();
+        for (let s of this.snake) { if (head.x === s.x && head.y === s.y) return this.endGame(); }
+
+        this.snake.unshift(head);
+        if (head.x === this.food.x && head.y === this.food.y) {
+          this.score += 10;
+          if (this.onScoreUpdate) this.onScoreUpdate(this.score);
+          this.spawnFood();
+        } else { this.snake.pop(); }
+        this.draw();
+      }
+      spawnFood() {
+        this.food = { x: Math.floor(Math.random() * this.tileCount), y: Math.floor(Math.random() * this.tileCount) };
+      }
+      endGame() {
+        this.gameOver = true; clearInterval(this.loop);
+        this.ctx.fillStyle = 'rgba(0,0,0,0.75)'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.font = '24px sans-serif'; this.ctx.textAlign = 'center';
+        this.ctx.fillText('Game Over!', this.canvas.width/2, this.canvas.height/2);
+      }
+      draw() {
+        this.ctx.fillStyle = '#0f172a'; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.beginPath();
+        this.ctx.arc((this.food.x + 0.5)*this.gridSize, (this.food.y + 0.5)*this.gridSize, this.gridSize/2 - 2, 0, Math.PI*2); this.ctx.fill();
+        this.ctx.fillStyle = '#10b981';
+        this.snake.forEach(s => this.ctx.fillRect(s.x*this.gridSize+1, s.y*this.gridSize+1, this.gridSize-2, this.gridSize-2));
+      }
+      stop() { if (this.loop) clearInterval(this.loop); }
+    }
+
+    // ==========================================
+    // 2. CLASS FLAPPY BIRD GAME
+    // ==========================================
+    class FlappyBirdGame {
+      constructor(canvasId, onScoreUpdate, difficulty = 'medium') {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.onScoreUpdate = onScoreUpdate;
+        this.gap = difficulty === 'easy' ? 120 : difficulty === 'medium' ? 95 : 75;
+        this.pipeSpeed = difficulty === 'easy' ? 1.5 : difficulty === 'medium' ? 2.2 : 3.0;
+        this.reset();
+        this.bindEvents();
+      }
+      reset() {
+        this.bird = { x: 50, y: 150, velocity: 0, gravity: 0.35, jump: -6, radius: 12 };
+        this.pipes = []; this.frame = 0; this.score = 0; this.gameOver = false;
+        if (this.loop) cancelAnimationFrame(this.loop);
+      }
+      start() {
+        this.reset();
+        const animate = () => { this.update(); if (!this.gameOver) this.loop = requestAnimationFrame(animate); };
+        animate();
+      }
+      bindEvents() {
+        const handleJump = () => { if (!this.gameOver) this.bird.velocity = this.bird.jump; };
+        window.onkeydown = (e) => { if (e.code === 'Space') handleJump(); };
+        this.canvas.onclick = handleJump;
+      }
+      update() {
+        this.frame++;
+        this.bird.velocity += this.bird.gravity;
+        this.bird.y += this.bird.velocity;
+        if (this.bird.y + this.bird.radius >= this.canvas.height || this.bird.y - this.bird.radius <= 0) return this.endGame();
+
+        if (this.frame % Math.floor(180 / this.pipeSpeed) === 0) {
+          const topHeight = Math.floor(Math.random() * (this.canvas.height - this.gap - 80)) + 30;
+          this.pipes.push({ x: this.canvas.width, top: topHeight, bottom: this.canvas.height - topHeight - this.gap, passed: false });
+        }
+
+        this.pipes.forEach(p => {
+          p.x -= this.pipeSpeed;
+          if (p.x + 40 < this.bird.x && !p.passed) {
+            p.passed = true; this.score += 1;
+            if (this.onScoreUpdate) this.onScoreUpdate(this.score);
+          }
+          if (this.bird.x + this.bird.radius > p.x && this.bird.x - this.bird.radius < p.x + 40 &&
+             (this.bird.y - this.bird.radius < p.top || this.bird.y + this.bird.radius > this.canvas.height - p.bottom)) {
+            this.endGame();
+          }
+        });
+        if (this.pipes.length && this.pipes[0].x < -40) this.pipes.shift();
+        this.draw();
+      }
+      endGame() {
+        this.gameOver = true;
+        this.ctx.fillStyle = 'rgba(0,0,0,0.75)'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.font = '24px sans-serif'; this.ctx.textAlign = 'center';
+        this.ctx.fillText('Game Over!', this.canvas.width/2, this.canvas.height/2);
+      }
+      draw() {
+        this.ctx.fillStyle = '#0284c7'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = '#22c55e';
+        this.pipes.forEach(p => { this.ctx.fillRect(p.x, 0, 40, p.top); this.ctx.fillRect(p.x, this.canvas.height - p.bottom, 40, p.bottom); });
+        this.ctx.fillStyle = '#facc15'; this.ctx.beginPath();
+        this.ctx.arc(this.bird.x, this.bird.y, this.bird.radius, 0, Math.PI*2); this.ctx.fill();
+      }
+      stop() { if (this.loop) cancelAnimationFrame(this.loop); }
+    }
+
+    // ==========================================
+    // 3. CLASS TIC TAC TOE GAME
+    // ==========================================
+    class TicTacToeGame {
+      constructor(canvasId, onScoreUpdate, difficulty = 'medium') {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.onScoreUpdate = onScoreUpdate;
+        this.difficulty = difficulty;
+        this.cellSize = this.canvas.width / 3;
+        this.reset();
+        this.bindEvents();
+      }
+      reset() { this.board = Array(9).fill(''); this.turn = 'X'; this.gameOver = false; this.score = 0; this.draw(); }
+      start() { this.reset(); }
+      bindEvents() {
+        this.canvas.onclick = (e) => {
+          if (this.gameOver || this.turn !== 'X') return;
+          const rect = this.canvas.getBoundingClientRect();
+          const col = Math.floor((e.clientX - rect.left) / this.cellSize);
+          const row = Math.floor((e.clientY - rect.top) / this.cellSize);
+          const index = row * 3 + col;
+          if (this.board[index] === '') {
+            this.makeMove(index, 'X');
+            if (!this.gameOver) setTimeout(() => this.botMove(), 300);
+          }
+        };
+      }
+      makeMove(index, player) {
+        this.board[index] = player; this.draw();
+        if (this.checkWin(player)) {
+          this.gameOver = true;
+          if (player === 'X') { this.score = 50; if (this.onScoreUpdate) this.onScoreUpdate(this.score); this.endGame('Kamu Menang!'); }
+          else { this.endGame('Bot Menang!'); }
+        } else if (this.board.every(c => c !== '')) {
+          this.gameOver = true; this.endGame('Hasil Seri!');
+        } else { this.turn = player === 'X' ? 'O' : 'X'; }
+      }
+      botMove() {
+        const empty = this.board.map((v, i) => v === '' ? i : null).filter(v => v !== null);
+        if (empty.length === 0) return;
+        let target = null;
+        if (this.difficulty !== 'easy') {
+          for (let i of empty) { this.board[i] = 'O'; if (this.checkWin('O')) { target = i; this.board[i] = ''; break; } this.board[i] = ''; }
+          if (target === null) {
+            for (let i of empty) { this.board[i] = 'X'; if (this.checkWin('X')) { target = i; this.board[i] = ''; break; } this.board[i] = ''; }
+          }
+        }
+        if (target === null) target = empty[Math.floor(Math.random() * empty.length)];
+        this.makeMove(target, 'O');
+      }
+      checkWin(p) {
+        return [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]].some(w => w.every(i => this.board[i] === p));
+      }
+      endGame(t) {
+        this.ctx.fillStyle = 'rgba(0,0,0,0.8)'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.font = '24px sans-serif'; this.ctx.textAlign = 'center';
+        this.ctx.fillText(t, this.canvas.width/2, this.canvas.height/2);
+      }
+      draw() {
+        this.ctx.fillStyle = '#0f172a'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.strokeStyle = '#334155'; this.ctx.lineWidth = 4;
+        for (let i = 1; i < 3; i++) {
+          this.ctx.beginPath(); this.ctx.moveTo(i*this.cellSize, 0); this.ctx.lineTo(i*this.cellSize, this.canvas.height); this.ctx.stroke();
+          this.ctx.beginPath(); this.ctx.moveTo(0, i*this.cellSize); this.ctx.lineTo(this.canvas.width, i*this.cellSize); this.ctx.stroke();
+        }
+        this.board.forEach((cell, i) => {
+          const x = (i % 3) * this.cellSize + this.cellSize/2, y = Math.floor(i / 3) * this.cellSize + this.cellSize/2;
+          if (cell === 'X') {
+            this.ctx.strokeStyle = '#ef4444'; this.ctx.lineWidth = 6; this.ctx.beginPath();
+            this.ctx.moveTo(x-30, y-30); this.ctx.lineTo(x+30, y+30); this.ctx.moveTo(x+30, y-30); this.ctx.lineTo(x-30, y+30); this.ctx.stroke();
+          } else if (cell === 'O') {
+            this.ctx.strokeStyle = '#3b82f6'; this.ctx.lineWidth = 6; this.ctx.beginPath(); this.ctx.arc(x, y, 30, 0, Math.PI*2); this.ctx.stroke();
+          }
+        });
+      }
+      stop() {}
+    }
+
+    // ==========================================
+    // 4. CLASS BREAKOUT GAME
+    // ==========================================
+    class BreakoutGame {
+      constructor(canvasId, onScoreUpdate, difficulty = 'medium') {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.onScoreUpdate = onScoreUpdate;
+        this.paddleWidth = difficulty === 'easy' ? 90 : difficulty === 'medium' ? 75 : 55;
+        this.baseSpeed = difficulty === 'easy' ? 2.5 : difficulty === 'medium' ? 4.0 : 5.5;
+        this.reset();
+        this.bindEvents();
+      }
+      reset() {
+        this.paddleHeight = 10; this.paddleX = (this.canvas.width - this.paddleWidth)/2;
+        this.ball = { x: this.canvas.width/2, y: this.canvas.height-30, dx: this.baseSpeed, dy: -this.baseSpeed, radius: 8 };
+        this.rowCount = 4; this.colCount = 5; this.brickWidth = 65; this.brickHeight = 20; this.brickPadding = 10;
+        this.brickOffsetTop = 30; this.brickOffsetLeft = 15;
+        this.bricks = [];
+        for (let c=0; c<this.colCount; c++) {
+          this.bricks[c] = [];
+          for (let r=0; r<this.rowCount; r++) this.bricks[c][r] = { x:0, y:0, status:1 };
+        }
+        this.score = 0; this.gameOver = false;
+        if (this.loop) cancelAnimationFrame(this.loop);
+      }
+      start() {
+        this.reset();
+        const animate = () => { this.update(); if (!this.gameOver) this.loop = requestAnimationFrame(animate); };
+        animate();
+      }
+      bindEvents() {
+        this.canvas.onmousemove = (e) => {
+          const rect = this.canvas.getBoundingClientRect();
+          const relX = e.clientX - rect.left;
+          if (relX > 0 && relX < this.canvas.width) this.paddleX = relX - this.paddleWidth/2;
+        };
+      }
+      update() {
+        this.ball.x += this.ball.dx; this.ball.y += this.ball.dy;
+        if (this.ball.x + this.ball.dx > this.canvas.width - this.ball.radius || this.ball.x + this.ball.dx < this.ball.radius) this.ball.dx = -this.ball.dx;
+        if (this.ball.y + this.ball.dy < this.ball.radius) {
+          this.ball.dy = -this.ball.dy;
+        } else if (this.ball.y + this.ball.dy > this.canvas.height - this.ball.radius) {
+          if (this.ball.x > this.paddleX && this.ball.x < this.paddleX + this.paddleWidth) this.ball.dy = -this.ball.dy;
+          else return this.endGame('Game Over!');
+        }
+
+        for (let c=0; c<this.colCount; c++) {
+          for (let r=0; r<this.rowCount; r++) {
+            let b = this.bricks[c][r];
+            if (b.status === 1) {
+              if (this.ball.x > b.x && this.ball.x < b.x + this.brickWidth && this.ball.y > b.y && this.ball.y < b.y + this.brickHeight) {
+                this.ball.dy = -this.ball.dy; b.status = 0; this.score += 10;
+                if (this.onScoreUpdate) this.onScoreUpdate(this.score);
+                if (this.score === this.rowCount * this.colCount * 10) return this.endGame('Kamu Menang!');
+              }
+            }
+          }
+        }
+        this.draw();
+      }
+      endGame(t) {
+        this.gameOver = true;
+        this.ctx.fillStyle = 'rgba(0,0,0,0.75)'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.font = '24px sans-serif'; this.ctx.textAlign = 'center';
+        this.ctx.fillText(t, this.canvas.width/2, this.canvas.height/2);
+      }
+      draw() {
+        this.ctx.fillStyle = '#0f172a'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        for (let c=0; c<this.colCount; c++) {
+          for (let r=0; r<this.rowCount; r++) {
+            if (this.bricks[c][r].status === 1) {
+              let bx = c * (this.brickWidth + this.brickPadding) + this.brickOffsetLeft;
+              let by = r * (this.brickHeight + this.brickPadding) + this.brickOffsetTop;
+              this.bricks[c][r].x = bx; this.bricks[c][r].y = by;
+              this.ctx.fillStyle = '#8b5cf6'; this.ctx.fillRect(bx, by, this.brickWidth, this.brickHeight);
+            }
+          }
+        }
+        this.ctx.fillStyle = '#38bdf8'; this.ctx.fillRect(this.paddleX, this.canvas.height - this.paddleHeight, this.paddleWidth, this.paddleHeight);
+        this.ctx.fillStyle = '#facc15'; this.ctx.beginPath(); this.ctx.arc(this.ball.x, this.ball.y, this.ball.radius, 0, Math.PI*2); this.ctx.fill();
+      }
+      stop() { if (this.loop) cancelAnimationFrame(this.loop); }
+    }
+
+    // ==========================================
+    // 5. CLASS PONG GAME (PERBAIKAN AI PRESISI)
+    // ==========================================
+    class PongGame {
+      constructor(canvasId, onScoreUpdate, difficulty = 'medium') {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.onScoreUpdate = onScoreUpdate;
+        this.aiSpeed = difficulty === 'easy' ? 0.05 : difficulty === 'medium' ? 0.12 : 0.22;
+        this.ballSpeed = difficulty === 'easy' ? 3 : difficulty === 'medium' ? 4.5 : 6;
+        this.paddleHeight = 60;
+        this.reset();
+        this.bindEvents();
+      }
+      reset() {
+        this.paddleWidth = 10;
+        this.playerY = (this.canvas.height - this.paddleHeight)/2;
+        this.aiY = (this.canvas.height - this.paddleHeight)/2;
+        this.ball = {
+          x: this.canvas.width/2,
+          y: this.canvas.height/2,
+          dx: this.ballSpeed,
+          dy: (Math.random() > 0.5 ? 1 : -1) * 3,
+          radius: 7
+        };
+        this.score = 0; this.gameOver = false;
+        if (this.loop) cancelAnimationFrame(this.loop);
+      }
+      start() {
+        this.reset();
+        const animate = () => { this.update(); if (!this.gameOver) this.loop = requestAnimationFrame(animate); };
+        animate();
+      }
+      bindEvents() {
+        this.canvas.onmousemove = (e) => {
+          const rect = this.canvas.getBoundingClientRect();
+          this.playerY = e.clientY - rect.top - this.paddleHeight/2;
+        };
+      }
+      update() {
+        this.ball.x += this.ball.dx;
+        this.ball.y += this.ball.dy;
+
+        // PERBAIKAN: Perhitungan gerakan berdasarkan TITIK TENGAH raket AI (aiCenter)
+        const aiCenter = this.aiY + (this.paddleHeight / 2);
+        const targetY = this.ball.y - aiCenter;
+        this.aiY += targetY * this.aiSpeed;
+
+        // Batasi raket musuh agar tidak tembus batas canvas
+        if (this.aiY < 0) this.aiY = 0;
+        if (this.aiY > this.canvas.height - this.paddleHeight) this.aiY = this.canvas.height - this.paddleHeight;
+
+        // Pantulan Dinding Atas/Bawah
+        if (this.ball.y - this.ball.radius < 0 || this.ball.y + this.ball.radius > this.canvas.height) {
+          this.ball.dy = -this.ball.dy;
+        }
+
+        // Pantulan Raket Pemain
+        if (this.ball.x - this.ball.radius < this.paddleWidth && this.ball.y > this.playerY && this.ball.y < this.playerY + this.paddleHeight) {
+          this.ball.dx = -this.ball.dx * 1.05;
+          this.score += 10;
+          if (this.onScoreUpdate) this.onScoreUpdate(this.score);
+        }
+
+        // Pantulan Raket Musuh (AI)
+        if (this.ball.x + this.ball.radius > this.canvas.width - this.paddleWidth && this.ball.y > this.aiY && this.ball.y < this.aiY + this.paddleHeight) {
+          this.ball.dx = -this.ball.dx;
+        }
+
+        if (this.ball.x < 0) return this.endGame('Game Over!');
+        else if (this.ball.x > this.canvas.width) return this.endGame('Kamu Menang!');
+        this.draw();
+      }
+      endGame(t) {
+        this.gameOver = true;
+        this.ctx.fillStyle = 'rgba(0,0,0,0.75)'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.font = '24px sans-serif'; this.ctx.textAlign = 'center';
+        this.ctx.fillText(t, this.canvas.width/2, this.canvas.height/2);
+      }
+      draw() {
+        this.ctx.fillStyle = '#0f172a'; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.strokeStyle = '#334155'; this.ctx.setLineDash([5,5]); this.ctx.beginPath();
+        this.ctx.moveTo(this.canvas.width/2, 0); this.ctx.lineTo(this.canvas.width/2, this.canvas.height); this.ctx.stroke(); this.ctx.setLineDash([]);
+        this.ctx.fillStyle = '#10b981'; this.ctx.fillRect(0, this.playerY, this.paddleWidth, this.paddleHeight);
+        this.ctx.fillStyle = '#ef4444'; this.ctx.fillRect(this.canvas.width - this.paddleWidth, this.aiY, this.paddleWidth, this.paddleHeight);
+        this.ctx.fillStyle = '#facc15'; this.ctx.beginPath(); this.ctx.arc(this.ball.x, this.ball.y, this.ball.radius, 0, Math.PI*2); this.ctx.fill();
+      }
+      stop() { if (this.loop) cancelAnimationFrame(this.loop); }
+    }
+
+    // ==========================================
+    // 6. LOGIKA PORTAL UTAMA & INTEGRASI
+    // ==========================================
+    const games = [
+      { id: 'snake', name: 'Snake Game', icon: '🐍' },
+      { id: 'flappy', name: 'Flappy Bird', icon: '🐦' },
+      { id: 'tictactoe', name: 'Tic Tac Toe', icon: '❌⭕' },
+      { id: 'breakout', name: 'Breakout', icon: '🧱' },
+      { id: 'pong', name: 'Ping Pong', icon: '🏓' }
+    ];
+
+    let activeGameInstance = null;
+    let currentGameId = null;
+    let currentGameName = null;
+
+    function saveHighScore(gameId, score) {
+      let currentHigh = parseInt(localStorage.getItem(`highScore_${gameId}`) || '0');
+      if (score > currentHigh) {
+        localStorage.setItem(`highScore_${gameId}`, score);
+        const scoreBadge = document.getElementById(`hs-${gameId}`);
+        if (scoreBadge) scoreBadge.innerText = `🏆 High: ${score}`;
+      }
+    }
+
+    function renderGames(list) {
+      const grid = document.getElementById('gameGrid');
+      grid.innerHTML = '';
+      list.forEach(game => {
+        const highScore = localStorage.getItem(`highScore_${game.id}`) || 0;
+        grid.innerHTML += `
+          <div class="game-card" onclick="launchGame('${game.id}', '${game.name}')">
+            <div class="game-icon">${game.icon}</div>
+            <h3>${game.name}</h3>
+            <div class="card-badge" id="hs-${game.id}">🏆 High: ${highScore}</div>
+          </div>
+        `;
+      });
+    }
+
+    function filterGames() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      renderGames(games.filter(g => g.name.toLowerCase().includes(query)));
+    }
+
+    function launchGame(id, name) {
+      currentGameId = id;
+      currentGameName = name;
+      document.getElementById('modalTitle').innerText = name;
+      document.getElementById('game-modal').style.display = 'flex';
+      startGameInstance();
+    }
+
+    function changeDifficulty() {
+      if (currentGameId && currentGameName) startGameInstance();
+    }
+
+    function startGameInstance() {
+      const difficulty = document.getElementById('difficultySelect').value;
+      let xpMultiplier = difficulty === 'medium' ? 1.5 : difficulty === 'hard' ? 2 : 1;
+
+      const onScoreUpdate = (score) => {
+        document.getElementById('modalTitle').innerText = `${currentGameName} | Skor: ${score}`;
+        saveHighScore(currentGameId, score);
+        addXP(Math.round(score * xpMultiplier));
+      };
+
+      if (activeGameInstance && activeGameInstance.stop) activeGameInstance.stop();
+
+      if (currentGameId === 'snake') activeGameInstance = new SnakeGame('gameCanvas', onScoreUpdate, difficulty);
+      else if (currentGameId === 'flappy') activeGameInstance = new FlappyBirdGame('gameCanvas', onScoreUpdate, difficulty);
+      else if (currentGameId === 'tictactoe') activeGameInstance = new TicTacToeGame('gameCanvas', onScoreUpdate, difficulty);
+      else if (currentGameId === 'breakout') activeGameInstance = new BreakoutGame('gameCanvas', onScoreUpdate, difficulty);
+      else if (currentGameId === 'pong') activeGameInstance = new PongGame('gameCanvas', onScoreUpdate, difficulty);
+
+      if (activeGameInstance) activeGameInstance.start();
+    }
+
+    function closeGame() {
+      if (activeGameInstance && activeGameInstance.stop) activeGameInstance.stop();
+      document.getElementById('game-modal').style.display = 'none';
+    }
+
+    function addXP(points) {
+      let xp = parseInt(localStorage.getItem('userXP') || '0') + points;
+      let level = Math.floor(xp / 100) + 1;
+      localStorage.setItem('userXP', xp);
+      localStorage.setItem('userLevel', level);
+      document.getElementById('userXP').innerText = xp;
+      document.getElementById('userLevel').innerText = level;
+    }
+
+    document.getElementById('userXP').innerText = localStorage.getItem('userXP') || '0';
+    document.getElementById('userLevel').innerText = localStorage.getItem('userLevel') || '1';
+
+    renderGames(games);
+  </script>
+</body>
+</html>
